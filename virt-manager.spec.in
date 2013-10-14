@@ -50,6 +50,7 @@ Requires: libxml2-python
 Requires: vte3
 Requires: dconf
 Requires: dbus-x11
+Requires: libosinfo
 
 # For console widget
 Requires: gtk-vnc2
