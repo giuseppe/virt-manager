@@ -391,17 +391,12 @@ class vmmCreate(vmmGObjectUI):
         # Install container OS
         self.widget("install-oscontainer-fs").set_text("")
 
-        # Mem / CPUs
-        self.widget("config-mem").set_value(DEFAULT_MEM)
-        self.widget("config-cpus").set_value(1)
-
         # Storage
         label_widget = self.widget("phys-hd-label")
         label_widget.set_markup("")
         uihelpers.update_host_space(self.conn, label_widget)
         self.widget("enable-storage").set_active(True)
         self.widget("config-storage-create").set_active(True)
-        self.widget("config-storage-size").set_value(8)
         self.widget("config-storage-entry").set_text("")
         self.widget("config-storage-nosparse").set_active(True)
 
@@ -1735,6 +1730,25 @@ class vmmCreate(vmmGObjectUI):
 
         if path:
             uihelpers.check_path_search_for_qemu(self.err, self.conn, path)
+
+        res = virtinst.osdict.get_minimum_resources(variant, self.capsguest.arch)
+
+        #Change the default values suggested to the user.
+        if res and res.get("ram"):
+            self.widget("config-mem").set_value(res["ram"] / (1024 ** 2))
+        else:
+            self.widget("config-mem").set_value(DEFAULT_MEM)
+
+        if res and res.get("n-cpus"):
+            self.widget("config-cpus").set_value(max(res["n-cpus"], 1))
+        else:
+            self.widget("config-cpus").set_value(1)
+
+        if res and res.get("storage"):
+            storage_size = int(res["storage"]) / (1024 ** 3)
+            self.widget("config-storage-size").set_value(storage_size)
+        else:
+            self.widget("config-storage-size").set_value(8)
 
         # Validation passed, store the install path (if there is one) in
         # gconf
