@@ -60,6 +60,12 @@ INSTALL_PAGE_IMPORT = 3
 INSTALL_PAGE_CONTAINER_APP = 4
 INSTALL_PAGE_CONTAINER_OS = 5
 
+(INSTALL_FIRMWARE_SEABIOS,
+INSTALL_FIRMWARE_SYSTEM_UEFI,
+INSTALL_FIRMWARE_CUSTOM_UEFI
+) = range(3)
+
+
 STABLE_OS_SUPPORT = [
     "rhel3", "rhel4", "rhel5.4", "rhel6",
     "win2k3", "winxp", "win2k8", "vista", "win7",
@@ -146,7 +152,11 @@ class vmmCreate(vmmGObjectUI):
             "on_config_kernel_browse_clicked": self.browse_kernel,
             "on_config_initrd_browse_clicked": self.browse_initrd,
             "on_config_dtb_browse_clicked": self.browse_dtb,
+            "on_config_uefi_binary_browse_clicked": self.browse_uefi_binary,
+            "on_config_uefi_template_browse_clicked": self.browse_uefi_template,
+            "on_config_uefi_varstore_browse_clicked": self.browse_uefi_varstore,
 
+            "on_config_uefi_type_changed": self.uefi_type_changed,
             "on_enable_storage_toggled": self.toggle_enable_storage,
 
             "on_config_set_macaddr_toggled": self.toggle_macaddr,
@@ -321,6 +331,17 @@ class vmmCreate(vmmGObjectUI):
         lst.set_model(model)
         uiutil.set_combo_text_column(lst, 0)
         lst.set_row_separator_func(lambda m, i, ignore: m[i][0] is None, None)
+
+        firmwareType = self.widget("config-uefi-type")
+        firmwareTypeModel = Gtk.ListStore(str, int)
+        firmwareType.set_model(firmwareTypeModel)
+        uiutil.set_combo_text_column(firmwareType, 0)
+        for i in ([_("SeaBIOS"), INSTALL_FIRMWARE_SEABIOS],
+                  [_("System-wide UEFI"), INSTALL_FIRMWARE_SYSTEM_UEFI],
+                  [_("Custom UEFI"), INSTALL_FIRMWARE_CUSTOM_UEFI]):
+            firmwareTypeModel.append(i)
+        firmwareType.set_active(INSTALL_FIRMWARE_SEABIOS)
+        self.uefi_type_changed(None)
 
     def reset_state(self, urihint=None):
         self.failed_guest = None
@@ -1249,6 +1270,17 @@ class vmmCreate(vmmGObjectUI):
         else:
             nodetect_label.show()
 
+    def uefi_type_changed(self, ignore):
+        sel = uiutil.get_list_selection(self.widget("config-uefi-type"), None)
+
+        uiutil.set_grid_row_visible(self.widget("config-uefi-binary-box"),
+                                    sel[1] == INSTALL_FIRMWARE_CUSTOM_UEFI)
+        uiutil.set_grid_row_visible(self.widget("config-uefi-template-box"),
+                                    sel[1] == INSTALL_FIRMWARE_CUSTOM_UEFI)
+        uiutil.set_grid_row_visible(self.widget("config-uefi-varstore-box"),
+                                    sel[1] != INSTALL_FIRMWARE_SEABIOS)
+
+
     def browse_oscontainer(self, ignore):
         self._browse_file("install-oscontainer-fs", is_dir=True)
     def browse_app(self, ignore):
@@ -1266,6 +1298,12 @@ class vmmCreate(vmmGObjectUI):
         self._browse_file("config-initrd")
     def browse_dtb(self, ignore):
         self._browse_file("config-dtb")
+    def browse_uefi_binary(self, ignore):
+        self._browse_file("config-uefi-binary")
+    def browse_uefi_template(self, ignore):
+        self._browse_file("config-uefi-template")
+    def browse_uefi_varstore(self, ignore):
+        self._browse_file("config-uefi-varstore")
 
     def toggle_enable_storage(self, src):
         self.widget("config-storage-align").set_sensitive(src.get_active())
@@ -1766,8 +1804,27 @@ class vmmCreate(vmmGObjectUI):
         if self.validate(page) is not True:
             return False
 
-        logging.debug("Starting create finish() sequence")
         guest = self.guest
+
+        guest.os.loader_ro = None
+        guest.os.loader_type = None
+        guest.os.loader = None
+        guest.os.nvram_template = None
+        guest.os.nvram = None
+        sel = uiutil.get_list_selection(self.widget("config-uefi-type"), None)
+        if sel[1] != INSTALL_FIRMWARE_SEABIOS:
+            guest.os.loader_ro = True
+            guest.os.loader_type = "pflash"
+            varstore = self.widget("config-uefi-varstore").get_text()
+            guest.os.nvram = varstore or None
+            if sel[1] == INSTALL_FIRMWARE_SYSTEM_UEFI:
+                guest.os.loader = "/usr/share/OVMF/OVMF_CODE.fd"
+            else:
+                guest.os.loader = self.widget("config-uefi-binary").get_text()
+                template = self.widget("config-uefi-template").get_text()
+                guest.os.nvram_template = template
+
+        logging.debug("Starting create finish() sequence")
 
         # Start the install
         self.failed_guest = None
